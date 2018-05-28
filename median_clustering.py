@@ -64,6 +64,23 @@ def process_files():
         process_file(taxi_data_files[i], taxi_output_files[i])
 
 
-process_files()
+# process_files()
+
+with open(taxi_folder_location + '\\trip_data_1.csv', "r") as input_file:
+    is_first = True
+    i = 0
+
+    for line in input_file:
+        if is_first:
+            is_first = False
+            print(line)
+            continue
+
+        print(line)
+
+        i += 1
+        if i > 100:
+            break
+
 # i = get_cluster_id(source_median_tree, (-73.91635466037592, 40.847389451422174))
 # print(i)
