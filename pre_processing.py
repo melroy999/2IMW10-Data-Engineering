@@ -156,7 +156,7 @@ else:
 
 # The location of the city bike trip data.
 bike_trip_data_folder_location = "Z:\\data_engineering\\bike_trip_data"
-bike_trip_files = [bike_trip_data_folder_location + "\\2013-" + ("%01d" % i) + " - Citi bike trip data.csv" for i in range(6, 13)]
+bike_trip_files = [bike_trip_data_folder_location + "\\2013-" + ("%02d" % i) + " - Citi bike trip data.csv" for i in range(6, 13)]
 
 # The location of the output data.
 bike_output_folder_location = "Z:\\data_engineering\\bike_pre_processed_trip_data"
@@ -178,7 +178,7 @@ def pre_process_bike_file(month_id):
 
             # Write the header of the file.
             # Note that some entries are not in the order specified in the file!
-            output_file.write("bike_id,start_time,end_time,pickup_longitude,pickup_latitude,dropoff_longitude,dropoff_latitude")
+            output_file.write("bike_id,start_time,end_time,pickup_longitude,pickup_latitude,dropoff_longitude,dropoff_latitude,trip_duration")
 
             for x in data_file:
                 if is_first:
@@ -191,15 +191,29 @@ def pre_process_bike_file(month_id):
                 # Note that we should remove ", which is present on every line.
                 fields_x = x.strip().replace("\"", "").split(",")
 
-                # We are only interested in the fields 1, 2, 5, 6, 9, 10 and 11.
-                target_fields = fields_x[11:12] + fields_x[1:3] + fields_x[6:7] + fields_x[5:6] + fields_x[10:11] + fields_x[9:10]
+                # We are only interested in the fields 0, 1, 2, 5, 6, 9, 10 and 11.
+                target_fields = fields_x[11:12] + fields_x[1:3] + fields_x[6:7] + fields_x[5:6] + fields_x[10:11] + \
+                                fields_x[9:10] + fields_x[0:1]
 
-                # Check the distance requirements.
-                if is_valid_position(fields_x[6], fields_x[5]) \
-                        and is_valid_position(fields_x[10], fields_x[9]):
+                try:
+                    # Sometimes, one of the positional data fields is null.
+                    # Thus, it is wise to check for NULL fields in our fields of interest, and all associations.
+                    if any(fields_x[i] == "NULL" for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]):
+                        # One of the positions is not set, so skip.
+                        continue
 
-                    # Add the entry to the pre-processing file.
-                    output_file.write('\n' + ",".join(target_fields))
+                    # We don't want the trip duration to be 0.
+                    if fields_x[0] == 0:
+                        continue
+
+                    # Check the distance requirements.
+                    if is_valid_position(fields_x[6], fields_x[5]) \
+                            and is_valid_position(fields_x[10], fields_x[9]):
+
+                        # Add the entry to the pre-processing file.
+                        output_file.write('\n' + ",".join(target_fields))
+                except ValueError:
+                    print("Value error on line \"" + x.strip() + "\"")
 
 
 if any(os.path.isfile(filename) for filename in bike_output_files):
