@@ -1,11 +1,17 @@
 # The partitioning into clusters is represented as a tree.
 import json
+import os
 
 # The folder and files we plan to take data from.
-from collections import namedtuple
+taxi_folder_folder = "Z:\\data_engineering\\taxi_pre_processed_trip_data"
+taxi_output_files = [taxi_folder_folder + "\\trip_data_" + str(i) + ".csv" for i in range(1, 13)]
 
-taxi_folder_location = "Z:\\trip_data"
-taxi_output_files = [taxi_folder_location + "\\trip_data_pp_" + str(i) + ".csv" for i in range(1, 13)]
+# The depth of the chosen tree.
+k = 10
+
+# The folder we want to store the result in.
+median_cluster_tree_folder = "Z:\\data_engineering"
+median_cluster_tree_file = "median_cluster_tree_k_" + str(k) + ".json"
 
 # Unique id counter for each node.
 id_counter = 0
@@ -71,21 +77,21 @@ class Node:
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, indent=4)
 
-    def write_to_file(self, filename):
+    def write_to_file(self):
         self.finalize()
-        with open(taxi_folder_location + "\\" + filename, "w") as output_file:
+        with open(median_cluster_tree_folder + "\\" + median_cluster_tree_file, "w") as output_file:
             output_file.write(self.to_json())
 
 
-def build_tree(depth, longitude_field, latitude_field):
+def build_tree(depth):
     # The root of our tree.
     tree_root = Node()
 
     for filename in taxi_output_files:
         print("Processing file", filename)
-        process_file(filename, tree_root, longitude_field, latitude_field)
+        process_file(filename, tree_root)
 
-    print("The tree has", len(tree_root.entries), "entries in total.")
+    print("The tree is based on", len(tree_root.entries), "start position entries.")
 
     for i in range(0, depth):
         print("Calculating depth", i)
@@ -95,7 +101,7 @@ def build_tree(depth, longitude_field, latitude_field):
     return tree_root
 
 
-def process_file(filename, tree_root, longitude_field, latitude_field):
+def process_file(filename, tree_root):
     with open(filename, "r") as input_file:
         is_first = True
 
@@ -108,16 +114,18 @@ def process_file(filename, tree_root, longitude_field, latitude_field):
             data_fields = line.strip().split(",")
 
             # Add the interesting data to the tree.
-            tree_root.register_entry((float(data_fields[longitude_field]), float(data_fields[latitude_field])))
+            tree_root.register_entry((float(data_fields[3]), float(data_fields[4])))
 
 
-tree = build_tree(10, -4, -3)
-tree.write_to_file("source_clustering_tree.json")
+if os.path.isfile(median_cluster_tree_folder + "\\" + median_cluster_tree_file):
+    answer = ""
+    while answer not in ["y", "n"]:
+        answer = input("The median cluster tree file already exist. Are you sure you want to continue [Y/N]? ").lower()
+    if answer == "y":
+        tree = build_tree(k)
+        tree.write_to_file()
+else:
+    tree = build_tree(k)
+    tree.write_to_file()
 
-tree = build_tree(10, -2, -1)
-tree.write_to_file("target_clustering_tree.json")
 
-# data = tree.to_json()
-# x = json.loads(data, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
-
-i = 0
