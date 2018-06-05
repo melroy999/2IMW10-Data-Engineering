@@ -14,7 +14,7 @@ N = 2 ** k
 
 # The current threshold used to determine when temporal edges are active.
 # We need a minimum of 'threshold' edges active for an edge to be created:
-edge_threshold = 5
+edge_threshold = 3
 
 # The location of the weather and the imported weather data.
 time_format = '%Y-%m-%d %H:%M:%S'
@@ -75,14 +75,16 @@ def get_data_from_bike_row(row):
 
 # Writes a row to the output file
 def write_taxi_row(start_time, end_time, from_cluster, to_cluster, avg_passenger_count, avg_trip_duration, 
-                   avg_fare_amount, avg_tip_amount, writer):
+                   avg_fare_amount, avg_tip_amount, count, writer):
     start_time_str = start_time.strftime(time_format)
     end_time_str = end_time.strftime(time_format)
+    duration = (end_time-start_time).total_seconds()
 
     global id_counter
     row = [id_counter, "Taxi", start_time_str, end_time_str, from_cluster, to_cluster, avg_passenger_count, 
            avg_trip_duration, avg_fare_amount, avg_tip_amount]
     row += get_weather(start_time_str)
+    row += [count, duration]
     writer.writerow(row)
 
     # increment the unique id.
@@ -90,13 +92,15 @@ def write_taxi_row(start_time, end_time, from_cluster, to_cluster, avg_passenger
 
 
 # Writes a bike row to the output file.
-def write_bike_row(start_time, end_time, from_cluster, to_cluster, avg_trip_duration, writer):
+def write_bike_row(start_time, end_time, from_cluster, to_cluster, avg_trip_duration, count, writer):
     start_time_str = start_time.strftime(time_format)
     end_time_str = end_time.strftime(time_format)
+    duration = (end_time-start_time).total_seconds()
 
     global id_counter
     row = [id_counter, "Bike", start_time_str, end_time_str, from_cluster, to_cluster, "", avg_trip_duration, "", ""]
     row += get_weather(start_time_str)
+    row += [count, duration]
     writer.writerow(row)
 
     # increment the unique id.
@@ -105,7 +109,7 @@ def write_bike_row(start_time, end_time, from_cluster, to_cluster, avg_trip_dura
 
 # Location of the clustered taxi files.
 taxi_folder_location = "Z:\\data_engineering\\taxi_sorted_trip_data"
-taxi_data_files = [taxi_folder_location + "\\trip_data_" + str(i) + ".csv" for i in range(1, 13)]
+taxi_data_files = [taxi_folder_location + "\\trip_data_" + str(i) + ".csv" for i in range(1, 13)][-1:]
 
 # Location of the clustered taxi files.
 bike_folder_location = "Z:\\data_engineering\\bike_sorted_trip_data"
@@ -126,6 +130,7 @@ def construct_taxi_temporal_edges(output_file):
     # Matrices that hold the current time data for each cluster, plus supportive data.
     time_matrix = [[[datetime.datetime.now(), datetime.datetime.now()] for _ in range(N)] for _ in range(N)]
     taxi_matrix = [[[0, 0, 0, 0, 0] for _ in range(N)] for _ in range(N)]
+    max_count_matrix = [[0 for _ in range(N)] for _ in range(N)]
 
     # Create a writer.
     writer = csv.writer(output_file)
@@ -136,7 +141,7 @@ def construct_taxi_temporal_edges(output_file):
 
     for filename in taxi_data_files:
         with open(filename, "r") as input_file:
-            print("Searching for temporal edges in", filename)
+            print("[" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M") + "]", "Searching for temporal edges in", filename)
 
             # Create a reader for the csv file.
             reader = csv.reader(input_file)
@@ -171,6 +176,7 @@ def construct_taxi_temporal_edges(output_file):
                                 (taxi_matrix[from_cluster][to_cluster][2]/taxi_matrix[from_cluster][to_cluster][0]),
                                 (taxi_matrix[from_cluster][to_cluster][3]/taxi_matrix[from_cluster][to_cluster][0]),
                                 (taxi_matrix[from_cluster][to_cluster][4]/taxi_matrix[from_cluster][to_cluster][0]),
+                                max_count_matrix[from_cluster][to_cluster],
                                 writer
                             )
 
@@ -202,6 +208,10 @@ def construct_taxi_temporal_edges(output_file):
                 taxi_matrix[from_cluster][to_cluster][2] += trip_duration  # Update fare
                 taxi_matrix[from_cluster][to_cluster][3] += fare_amount  # Update tip
                 taxi_matrix[from_cluster][to_cluster][4] += tip_amount  # Update passenger
+
+                if max_count_matrix[from_cluster][to_cluster] < taxi_matrix[from_cluster][to_cluster][0]:
+                    max_count_matrix[from_cluster][to_cluster] = taxi_matrix[from_cluster][to_cluster][0]
+
                 queue.put(read_trip_end)
 
                 # If we have no top, pop the queue.
@@ -216,6 +226,7 @@ def construct_bike_temporal_edges(output_file):
     # Matrices that hold the current time data for each cluster, plus supportive data.
     time_matrix = [[[datetime.datetime.now(), datetime.datetime.now()] for _ in range(N)] for _ in range(N)]
     bike_matrix = [[[0, 0] for _ in range(N)] for _ in range(N)]
+    max_count_matrix = [[0 for _ in range(N)] for _ in range(N)]
 
     # Create a writer.
     writer = csv.writer(output_file)
@@ -226,7 +237,7 @@ def construct_bike_temporal_edges(output_file):
 
     for filename in bike_data_files:
         with open(filename, "r") as input_file:
-            print("Searching for temporal edges in", filename)
+            print("[" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M") + "]", "Searching for temporal edges in", filename)
 
             # Create a reader for the csv file.
             reader = csv.reader(input_file)
@@ -257,8 +268,10 @@ def construct_bike_temporal_edges(output_file):
                                 to_cluster,
                                 # The average distance traveled by the bikes during the trips.
                                 (bike_matrix[from_cluster][to_cluster][1]/bike_matrix[from_cluster][to_cluster][0]),
+                                max_count_matrix[from_cluster][to_cluster],
                                 writer
                             )
+                            max_count_matrix[from_cluster][to_cluster] = edge_threshold
 
                         # Update the number of active edges and total duration.
                         bike_matrix[from_cluster][to_cluster][0] -= 1
@@ -281,6 +294,10 @@ def construct_bike_temporal_edges(output_file):
                 # Update the number of active edges and total duration.
                 bike_matrix[from_cluster][to_cluster][0] += 1
                 bike_matrix[from_cluster][to_cluster][1] += trip_duration
+
+                if max_count_matrix[from_cluster][to_cluster] < bike_matrix[from_cluster][to_cluster][0]:
+                    max_count_matrix[from_cluster][to_cluster] = bike_matrix[from_cluster][to_cluster][0]
+
                 queue.put(read_trip_end)
 
                 # If we have no top, pop the queue.
@@ -295,10 +312,10 @@ def _construct_temporal_edges():
         writer = csv.writer(output_file)
         writer.writerow(["edge_id", "edge_label", "start_time", "end_time", "from_cluster", "to_cluster",
                          "passenger_count", "trip_duration", "fare_amount", "tip_amount", "temperature", "fog",
-                         "rain", "condition"])
+                         "rain", "condition", "no_of_edges", "duration"])
 
         construct_taxi_temporal_edges(output_file)
-        construct_bike_temporal_edges(output_file)
+        # construct_bike_temporal_edges(output_file)
 
 
 def construct_temporal_edges():
